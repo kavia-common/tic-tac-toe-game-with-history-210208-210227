@@ -5,8 +5,11 @@ from dotenv import load_dotenv
 # Ensure env is loaded for tests
 load_dotenv()
 
-# Force in-memory DB for tests to avoid filesystem side-effects
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Use fast, isolated in-memory storage by unsetting DATABASE_URL before importing the app.
+# This avoids sqlite in-memory multi-connection schema loss across connections during tests.
+if "DATABASE_URL" in os.environ:
+    del os.environ["DATABASE_URL"]
+
 # Allow local origins for any CORS preflight in tests (not strictly needed for TestClient)
 os.environ["CORS_ORIGINS"] = "http://localhost:3000"
 
