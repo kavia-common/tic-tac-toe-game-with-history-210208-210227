@@ -1,16 +1,308 @@
-from fastapi import FastAPI
+from datetime import datetime
+from typing import List, Optional, Dict, Any
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-app = FastAPI()
+# ----------------------------
+# Models
+# ----------------------------
 
+class Move(BaseModel):
+    """Represents a single move in a tic tac toe game."""
+    index: int = Field(..., ge=0, le=8, description="Zero-based board index (0-8)")
+    player: str = Field(..., pattern="^(X|O)$", description="The player symbol making the move: 'X' or 'O'")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp when the move was made")
+
+
+class GameState(BaseModel):
+    """Represents the current state of a game."""
+    board: List[str] = Field(default_factory=lambda: [""] * 9, description="Current board as 9 cells, values '', 'X', or 'O'")
+    current_player: str = Field(default="X", description="Which player should move next: 'X' or 'O'")
+    winner: Optional[str] = Field(default=None, description="Winner 'X' or 'O' if any")
+    is_draw: bool = Field(default=False, description="True if the game ended in a draw")
+    history: List[Move] = Field(default_factory=list, description="Ordered move history")
+
+
+class GameRecord(GameState):
+    """Game persisted record with identifiers and metadata."""
+    game_id: str = Field(..., description="Unique game identifier")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    finished_at: Optional[datetime] = Field(default=None, description="End timestamp if game is finished")
+
+
+# Request and Response Models
+
+class CreateGameResponse(BaseModel):
+    # PUBLIC_INTERFACE
+    def model_post_init(self, __context: Any) -> None:
+        """This is a public function."""
+    game_id: str = Field(..., description="Newly created game identifier")
+    state: GameState = Field(..., description="Initial state of the game")
+
+
+class MakeMoveRequest(BaseModel):
+    index: int = Field(..., ge=0, le=8, description="Zero-based board index (0-8)")
+    player: str = Field(..., pattern="^(X|O)$", description="Player symbol attempting the move")
+
+
+class MakeMoveResponse(BaseModel):
+    game_id: str = Field(..., description="Game identifier")
+    state: GameState = Field(..., description="Updated state after the move")
+
+
+class GetGameResponse(BaseModel):
+    game_id: str = Field(..., description="Game identifier")
+    state: GameState = Field(..., description="Current state including full history")
+
+
+class FinishedGameSummary(BaseModel):
+    game_id: str = Field(..., description="Game identifier")
+    winner: Optional[str] = Field(default=None, description="Winner 'X' or 'O', or null if draw")
+    is_draw: bool = Field(..., description="True if the game ended in a draw")
+    finished_at: datetime = Field(..., description="Timestamp when the game finished")
+
+
+class ListGamesResponse(BaseModel):
+    games: List[FinishedGameSummary] = Field(..., description="List of finished games (recent first)")
+
+
+# ----------------------------
+# Simple pluggable storage
+# ----------------------------
+
+class InMemoryStorage:
+    """Replaceable storage adapter; mimic a DB layer that can be swapped later."""
+    def __init__(self) -> None:
+        self._games: Dict[str, GameRecord] = {}
+
+    # PUBLIC_INTERFACE
+    def create_game(self) -> GameRecord:
+        """Create and persist a new game record and return it."""
+        game_id = str(uuid4())
+        record = GameRecord(game_id=game_id, state=GameState().model_dump(), created_at=datetime.utcnow())  # type: ignore[arg-type]
+        # Normalize: GameRecord inherits GameState, but we want fields set explicitly.
+        record.board = [""] * 9
+        record.current_player = "X"
+        record.winner = None
+        record.is_draw = False
+        record.history = []
+        self._games[game_id] = record
+        return record
+
+    # PUBLIC_INTERFACE
+    def get_game(self, game_id: str) -> GameRecord:
+        """Fetch a game by id or raise KeyError."""
+        rec = self._games.get(game_id)
+        if not rec:
+            raise KeyError(game_id)
+        return rec
+
+    # PUBLIC_INTERFACE
+    def save_game(self, record: GameRecord) -> None:
+        """Persist an updated game record."""
+        self._games[record.game_id] = record
+
+    # PUBLIC_INTERFACE
+    def list_finished(self, limit: int = 20) -> List[GameRecord]:
+        """Return recently finished games, most recent first."""
+        finished = [g for g in self._games.values() if g.winner or g.is_draw]
+        finished.sort(key=lambda g: g.finished_at or g.created_at, reverse=True)
+        return finished[:limit]
+
+
+storage = InMemoryStorage()
+
+
+# ----------------------------
+# Game logic
+# ----------------------------
+
+WIN_LINES = [
+    (0, 1, 2), (3, 4, 5), (6, 7, 8),  # rows
+    (0, 3, 6), (1, 4, 7), (2, 5, 8),  # cols
+    (0, 4, 8), (2, 4, 6),             # diagonals
+]
+
+
+def check_winner(board: List[str]) -> Optional[str]:
+    """Return 'X' or 'O' if a winning line exists, else None."""
+    for a, b, c in WIN_LINES:
+        if board[a] and board[a] == board[b] and board[b] == board[c]:
+            return board[a]
+    return None
+
+
+def is_draw(board: List[str]) -> bool:
+    """Return True if the board is full and no winner."""
+    return all(cell in ("X", "O") for cell in board) and check_winner(board) is None
+
+
+def assert_valid_move(record: GameRecord, index: int, player: str) -> None:
+    """Validate move against current game state; raise HTTPException on invalid."""
+    if record.winner or record.is_draw:
+        raise HTTPException(status_code=400, detail="Game already finished.")
+    if player != record.current_player:
+        raise HTTPException(status_code=400, detail=f"It is not {player}'s turn.")
+    if not (0 <= index <= 8):
+        raise HTTPException(status_code=422, detail="Index must be between 0 and 8.")
+    if record.board[index] != "":
+        raise HTTPException(status_code=400, detail="Cell already occupied.")
+
+
+def apply_move(record: GameRecord, index: int, player: str) -> GameRecord:
+    """Apply a move to the record, update board, winner/draw, current player, and history."""
+    assert_valid_move(record, index, player)
+
+    # Update board
+    record.board[index] = player
+
+    # Append to history
+    record.history.append(Move(index=index, player=player, timestamp=datetime.utcnow()))
+
+    # Check winner or draw
+    winner = check_winner(record.board)
+    if winner:
+        record.winner = winner
+        record.is_draw = False
+        record.finished_at = datetime.utcnow()
+    else:
+        record.is_draw = is_draw(record.board)
+        if record.is_draw:
+            record.finished_at = datetime.utcnow()
+
+    # Toggle player if not finished
+    if not (record.winner or record.is_draw):
+        record.current_player = "O" if record.current_player == "X" else "X"
+
+    return record
+
+
+# ----------------------------
+# FastAPI Application
+# ----------------------------
+
+app = FastAPI(
+    title="Tic Tac Toe API",
+    description="REST API for playing Tic Tac Toe with simple persistence and history.",
+    version="1.0.0",
+    openapi_tags=[
+        {"name": "health", "description": "Service health endpoints"},
+        {"name": "games", "description": "Game lifecycle and move operations"},
+    ],
+)
+
+# CORS for frontend on port 3000
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "*",  # fallback permissive for demo; restrict in production
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-def health_check():
+
+@app.get("/", tags=["health"], summary="Health Check")
+def health_check() -> Dict[str, str]:
+    """Health check endpoint."""
     return {"message": "Healthy"}
+
+
+# PUBLIC_INTERFACE
+@app.post("/games", response_model=CreateGameResponse, tags=["games"], summary="Start a new game", description="Creates a new Tic Tac Toe game and returns the game id and initial state.")
+def start_game() -> CreateGameResponse:
+    """Create a new game."""
+    rec = storage.create_game()
+    state = GameState(
+        board=rec.board,
+        current_player=rec.current_player,
+        winner=rec.winner,
+        is_draw=rec.is_draw,
+        history=rec.history,
+    )
+    return CreateGameResponse(game_id=rec.game_id, state=state)
+
+
+# PUBLIC_INTERFACE
+@app.post(
+    "/games/{game_id}/moves",
+    response_model=MakeMoveResponse,
+    tags=["games"],
+    summary="Make a move",
+    description="Apply a move by specifying the board index (0-8) and the player ('X' or 'O'). Returns updated state.",
+)
+def make_move(
+    game_id: str = Path(..., description="The target game identifier"),
+    payload: MakeMoveRequest = ...,
+) -> MakeMoveResponse:
+    """Apply a move to an existing game and return the updated state."""
+    try:
+        rec = storage.get_game(game_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    rec = apply_move(rec, payload.index, payload.player)
+    storage.save_game(rec)
+
+    state = GameState(
+        board=rec.board,
+        current_player=rec.current_player,
+        winner=rec.winner,
+        is_draw=rec.is_draw,
+        history=rec.history,
+    )
+    return MakeMoveResponse(game_id=rec.game_id, state=state)
+
+
+# PUBLIC_INTERFACE
+@app.get(
+    "/games/{game_id}",
+    response_model=GetGameResponse,
+    tags=["games"],
+    summary="Get game state",
+    description="Fetch the current state and full move history for a specific game.",
+)
+def get_game(game_id: str = Path(..., description="The game identifier")) -> GetGameResponse:
+    """Fetch the current game state and history."""
+    try:
+        rec = storage.get_game(game_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    state = GameState(
+        board=rec.board,
+        current_player=rec.current_player,
+        winner=rec.winner,
+        is_draw=rec.is_draw,
+        history=rec.history,
+    )
+    return GetGameResponse(game_id=rec.game_id, state=state)
+
+
+# PUBLIC_INTERFACE
+@app.get(
+    "/games",
+    response_model=ListGamesResponse,
+    tags=["games"],
+    summary="List recent finished games",
+    description="Returns a list of recently finished games (winner or draw), most recent first.",
+)
+def list_games() -> ListGamesResponse:
+    """List finished games with basic summary metadata."""
+    records = storage.list_finished(limit=20)
+    summaries = [
+        FinishedGameSummary(
+            game_id=r.game_id,
+            winner=r.winner,
+            is_draw=r.is_draw,
+            finished_at=r.finished_at or r.created_at,
+        )
+        for r in records
+    ]
+    return ListGamesResponse(games=summaries)
