@@ -11,35 +11,55 @@ Endpoints:
 
 ## Run locally
 
-- Install deps: `pip install -r requirements.txt`
-- Start: `uvicorn src.api.main:app --reload --port 3001`
+1) Create a local `.env` (already provided) with:
+```
+DATABASE_URL=sqlite:///./tictactoe.db
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+PORT=3001
+```
 
-The app will auto-generate OpenAPI docs at `/docs`.
+2) Install dependencies:
+```
+pip install -r requirements.txt
+```
+
+3) Start the dev server (uses PORT from .env):
+```
+uvicorn src.api.main:app --reload --port ${PORT:-3001}
+```
+
+- API docs: http://localhost:3001/docs
+
+## Frontend integration
+
+- The frontend expects the backend on http://localhost:3001 by default (see frontend `.env` REACT_APP_API_BASE).
+- Ensure CORS_ORIGINS includes your frontend origin(s): `http://localhost:3000,http://127.0.0.1:3000`.
 
 ## Configuration (.env)
 
 This service reads environment variables using python-dotenv if a `.env` file is present.
 
-Copy `.env.example` to `.env` and adjust as needed:
-
-```
-DATABASE_URL=sqlite:///./tictactoe.db
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-```
-
+Common variables:
 - `DATABASE_URL`: The persistence layer. Supported value: SQLite via `sqlite:///path`. Default is `sqlite:///./tictactoe.db`.
   - Examples:
     - `sqlite:///./tictactoe.db` (file in project folder)
     - `sqlite:///:memory:` (ephemeral in-memory database)
 - `CORS_ORIGINS`: Comma-separated list of allowed origins for the frontend.
+- `PORT`: Port to run the local dev server (used only by the launch command above).
 
 ## Persistence
 
-By default, if `DATABASE_URL` is set (defaults to `sqlite:///./tictactoe.db`), the backend uses a SQLite-backed adapter that creates two tables:
+By default, the backend uses SQLite via `DATABASE_URL=sqlite:///./tictactoe.db`, creating two tables:
 - `games (game_id TEXT PRIMARY KEY, board TEXT, current_player TEXT, winner TEXT NULL, is_draw INT, created_at TEXT, finished_at TEXT NULL)`
 - `moves (id INTEGER PRIMARY KEY AUTOINCREMENT, game_id TEXT, move_index INT, player TEXT, timestamp TEXT)`
 
-If you explicitly want in-memory storage (not persisted), unset `DATABASE_URL` before starting the server.
+To switch to in-memory (non-persistent) storage for quick testing, unset `DATABASE_URL` before starting:
+```
+unset DATABASE_URL
+uvicorn src.api.main:app --reload --port ${PORT:-3001}
+```
+
+To switch databases in the future, update `DATABASE_URL` to a supported driver and update the storage adapter accordingly.
 
 ## CORS
 
