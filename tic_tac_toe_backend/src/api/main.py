@@ -1,9 +1,9 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from uuid import uuid4
 import os
 
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -40,37 +40,41 @@ class GameRecord(GameState):
 
 # Request and Response Models
 
+# PUBLIC_INTERFACE
 class CreateGameResponse(BaseModel):
-    # PUBLIC_INTERFACE
-    def model_post_init(self, __context: Any) -> None:
-        """This is a public function."""
+    """Response returned when starting a new game."""
     game_id: str = Field(..., description="Newly created game identifier")
     state: GameState = Field(..., description="Initial state of the game")
 
-
+# PUBLIC_INTERFACE
 class MakeMoveRequest(BaseModel):
+    """Request payload to make a move on a specific game."""
     index: int = Field(..., ge=0, le=8, description="Zero-based board index (0-8)")
     player: str = Field(..., pattern="^(X|O)$", description="Player symbol attempting the move")
 
-
+# PUBLIC_INTERFACE
 class MakeMoveResponse(BaseModel):
+    """Response returned after applying a move, including updated state."""
     game_id: str = Field(..., description="Game identifier")
     state: GameState = Field(..., description="Updated state after the move")
 
-
+# PUBLIC_INTERFACE
 class GetGameResponse(BaseModel):
+    """Response containing the current game state and full history."""
     game_id: str = Field(..., description="Game identifier")
     state: GameState = Field(..., description="Current state including full history")
 
-
+# PUBLIC_INTERFACE
 class FinishedGameSummary(BaseModel):
+    """Summary for a finished game used in listings."""
     game_id: str = Field(..., description="Game identifier")
     winner: Optional[str] = Field(default=None, description="Winner 'X' or 'O', or null if draw")
     is_draw: bool = Field(..., description="True if the game ended in a draw")
     finished_at: datetime = Field(..., description="Timestamp when the game finished")
 
-
+# PUBLIC_INTERFACE
 class ListGamesResponse(BaseModel):
+    """Response listing recently finished games."""
     games: List[FinishedGameSummary] = Field(..., description="List of finished games (recent first)")
 
 
@@ -168,6 +172,9 @@ app = FastAPI(
 # SECURITY: Do not allow wildcard origins by default. Require explicit configuration via CORS_ORIGINS.
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
 origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+# Provide localhost defaults for development if not explicitly configured
+if not origins:
+    origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 # If no origins configured, set empty list to effectively disable cross-origin requests.
 app.add_middleware(
@@ -181,14 +188,22 @@ app.add_middleware(
 
 @app.get("/", tags=["health"], summary="Health Check")
 def health_check() -> Dict[str, str]:
-    """Health check endpoint."""
+    """Health check endpoint.
+
+    Returns:
+        Dict[str, str]: A simple message indicating the service is healthy.
+    """
     return {"message": "Healthy"}
 
 
 # PUBLIC_INTERFACE
 @app.post("/games", response_model=CreateGameResponse, tags=["games"], summary="Start a new game", description="Creates a new Tic Tac Toe game and returns the game id and initial state.")
 def start_game() -> CreateGameResponse:
-    """Create a new game."""
+    """Create a new game.
+
+    Returns:
+        CreateGameResponse: Contains the game_id and the initial state of the new game.
+    """
     # Generate a game id here in the API layer for consistent behavior across adapters
     game_id = str(uuid4())
     rec = storage.create_game(game_id=game_id, created_at=datetime.utcnow())
@@ -212,9 +227,17 @@ def start_game() -> CreateGameResponse:
 )
 def make_move(
     game_id: str = Path(..., description="The target game identifier"),
-    payload: MakeMoveRequest = ...,
+    payload: MakeMoveRequest = Body(..., description="The move to apply to the game"),
 ) -> MakeMoveResponse:
-    """Apply a move to an existing game and return the updated state."""
+    """Apply a move to an existing game and return the updated state.
+
+    Args:
+        game_id (str): The target game identifier.
+        payload (MakeMoveRequest): The move payload containing index and player.
+
+    Returns:
+        MakeMoveResponse: The updated game state after applying the move.
+    """
     try:
         rec = storage.get_game(game_id)
     except KeyError:
@@ -242,7 +265,14 @@ def make_move(
     description="Fetch the current state and full move history for a specific game.",
 )
 def get_game(game_id: str = Path(..., description="The game identifier")) -> GetGameResponse:
-    """Fetch the current game state and history."""
+    """Fetch the current game state and history.
+
+    Args:
+        game_id (str): The game identifier.
+
+    Returns:
+        GetGameResponse: The current state including full move history.
+    """
     try:
         rec = storage.get_game(game_id)
     except KeyError:
@@ -267,7 +297,11 @@ def get_game(game_id: str = Path(..., description="The game identifier")) -> Get
     description="Returns a list of recently finished games (winner or draw), most recent first.",
 )
 def list_games() -> ListGamesResponse:
-    """List finished games with basic summary metadata."""
+    """List finished games with basic summary metadata.
+
+    Returns:
+        ListGamesResponse: Recently finished games (winner or draw), most recent first.
+    """
     records = storage.list_finished(limit=20)
     summaries = [
         FinishedGameSummary(
