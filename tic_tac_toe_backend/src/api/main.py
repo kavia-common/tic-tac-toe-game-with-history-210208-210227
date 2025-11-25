@@ -172,11 +172,18 @@ app = FastAPI(
 # SECURITY: Do not allow wildcard origins by default. Require explicit configuration via CORS_ORIGINS.
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
 origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+
+# Optionally include FRONTEND_URL automatically if provided
+frontend_url = os.getenv("FRONTEND_URL", "").strip()
+if frontend_url:
+    if frontend_url not in origins:
+        origins.append(frontend_url)
+
 # Provide localhost defaults for development if not explicitly configured
 if not origins:
     origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
-# If no origins configured, set empty list to effectively disable cross-origin requests.
+# Initialize CORS middleware with computed origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

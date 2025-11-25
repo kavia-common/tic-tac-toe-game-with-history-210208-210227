@@ -49,6 +49,7 @@ Common variables:
     - `sqlite:///./tictactoe.db` (file in project folder)
     - `sqlite:///:memory:` (ephemeral in-memory database)
 - `CORS_ORIGINS`: Comma-separated list of allowed origins for the frontend.
+- `FRONTEND_URL`: Single frontend origin to automatically include in allowed CORS origins (e.g., a preview deployment URL). If set, it is merged with `CORS_ORIGINS`.
 - `PORT`: Port to run the local dev server (used only by the launch command above).
 
 ## Persistence
@@ -67,9 +68,23 @@ To switch databases in the future, update `DATABASE_URL` to a supported driver a
 
 ## CORS
 
-CORS is enabled and configured via `CORS_ORIGINS` (comma-separated). If not set, cross-origin requests are disabled by default (no wildcard). For local development, set:
+CORS is enabled and configured via `CORS_ORIGINS` (comma-separated). Additionally, if `FRONTEND_URL` is set, it will be automatically merged into the allowed origins list.
+
+Behavior:
+- If both `CORS_ORIGINS` and `FRONTEND_URL` are set, both will be allowed.
+- If neither is set, safe local development defaults are used:
+  - `http://localhost:3000`
+  - `http://127.0.0.1:3000`
+
+Examples:
 ```
+# Local development
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# Preview/hosted environment (auto-include the preview frontend)
+FRONTEND_URL=https://<host>:3000
+# Optionally include others explicitly as needed
+CORS_ORIGINS=https://another-allowed-origin.example.com
 ```
 
 ## Migration path

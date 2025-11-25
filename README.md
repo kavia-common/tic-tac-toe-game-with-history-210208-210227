@@ -10,6 +10,8 @@ Backend:
    ```
    DATABASE_URL=sqlite:///./tictactoe.db
    CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+   # FRONTEND_URL is optional: when set, it is automatically added to allowed CORS origins
+   # FRONTEND_URL=https://your-preview-frontend.example.com
    PORT=3001
    ```
 3. Install and run:
