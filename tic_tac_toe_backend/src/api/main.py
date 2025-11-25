@@ -1,10 +1,15 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
+import os
 
 from fastapi import FastAPI, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+# Load environment variables from a .env file if present
+load_dotenv()
 
 # ----------------------------
 # Models
@@ -70,51 +75,17 @@ class ListGamesResponse(BaseModel):
 
 
 # ----------------------------
-# Simple pluggable storage
+# Storage selection (env-driven)
 # ----------------------------
+from src.api.storage import InMemoryStorage, DBStorage  # local adapters
 
-class InMemoryStorage:
-    """Replaceable storage adapter; mimic a DB layer that can be swapped later."""
-    def __init__(self) -> None:
-        self._games: Dict[str, GameRecord] = {}
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tictactoe.db")
+USE_DB = bool(DATABASE_URL)
 
-    # PUBLIC_INTERFACE
-    def create_game(self) -> GameRecord:
-        """Create and persist a new game record and return it."""
-        game_id = str(uuid4())
-        record = GameRecord(game_id=game_id, state=GameState().model_dump(), created_at=datetime.utcnow())  # type: ignore[arg-type]
-        # Normalize: GameRecord inherits GameState, but we want fields set explicitly.
-        record.board = [""] * 9
-        record.current_player = "X"
-        record.winner = None
-        record.is_draw = False
-        record.history = []
-        self._games[game_id] = record
-        return record
-
-    # PUBLIC_INTERFACE
-    def get_game(self, game_id: str) -> GameRecord:
-        """Fetch a game by id or raise KeyError."""
-        rec = self._games.get(game_id)
-        if not rec:
-            raise KeyError(game_id)
-        return rec
-
-    # PUBLIC_INTERFACE
-    def save_game(self, record: GameRecord) -> None:
-        """Persist an updated game record."""
-        self._games[record.game_id] = record
-
-    # PUBLIC_INTERFACE
-    def list_finished(self, limit: int = 20) -> List[GameRecord]:
-        """Return recently finished games, most recent first."""
-        finished = [g for g in self._games.values() if g.winner or g.is_draw]
-        finished.sort(key=lambda g: g.finished_at or g.created_at, reverse=True)
-        return finished[:limit]
-
-
-storage = InMemoryStorage()
-
+if USE_DB:
+    storage = DBStorage(DATABASE_URL)
+else:
+    storage = InMemoryStorage()
 
 # ----------------------------
 # Game logic
@@ -125,7 +96,6 @@ WIN_LINES = [
     (0, 3, 6), (1, 4, 7), (2, 5, 8),  # cols
     (0, 4, 8), (2, 4, 6),             # diagonals
 ]
-
 
 def check_winner(board: List[str]) -> Optional[str]:
     """Return 'X' or 'O' if a winning line exists, else None."""
@@ -194,14 +164,20 @@ app = FastAPI(
     ],
 )
 
-# CORS for frontend on port 3000
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS with env-driven origins (default to localhost:3000 and permissive)
+cors_origins_env = os.getenv("CORS_ORIGINS")
+if cors_origins_env:
+    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "*",  # fallback permissive for demo; restrict in production
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -218,7 +194,9 @@ def health_check() -> Dict[str, str]:
 @app.post("/games", response_model=CreateGameResponse, tags=["games"], summary="Start a new game", description="Creates a new Tic Tac Toe game and returns the game id and initial state.")
 def start_game() -> CreateGameResponse:
     """Create a new game."""
-    rec = storage.create_game()
+    # Generate a game id here in the API layer for consistent behavior across adapters
+    game_id = str(uuid4())
+    rec = storage.create_game(game_id=game_id, created_at=datetime.utcnow())
     state = GameState(
         board=rec.board,
         current_player=rec.current_player,
