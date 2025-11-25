@@ -164,17 +164,12 @@ app = FastAPI(
     ],
 )
 
-# CORS with env-driven origins (default to localhost:3000 and permissive)
-cors_origins_env = os.getenv("CORS_ORIGINS")
-if cors_origins_env:
-    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-else:
-    origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "*",  # fallback permissive for demo; restrict in production
-    ]
+# CORS with env-driven origins (strict)
+# SECURITY: Do not allow wildcard origins by default. Require explicit configuration via CORS_ORIGINS.
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 
+# If no origins configured, set empty list to effectively disable cross-origin requests.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

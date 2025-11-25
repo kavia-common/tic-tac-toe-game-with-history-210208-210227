@@ -43,7 +43,10 @@ If you explicitly want in-memory storage (not persisted), unset `DATABASE_URL` b
 
 ## CORS
 
-CORS is enabled and configured via `CORS_ORIGINS` (comma-separated). Defaults include `http://localhost:3000`.
+CORS is enabled and configured via `CORS_ORIGINS` (comma-separated). If not set, cross-origin requests are disabled by default (no wildcard). For local development, set:
+```
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+```
 
 ## Migration path
 
