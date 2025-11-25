@@ -20,8 +20,8 @@ Backend:
    Docs: http://localhost:3001/docs
 
 Frontend:
-1. cd ../tic-tac-toe-game-with-history-210208-210228/tic_tac_toe_frontend
-2. Ensure `.env` contains:
+1. cd ../tic-tac-toe-game-with-history-210208-210227/tic_tac_toe_frontend
+2. Ensure `.env` contains (see .env.example for reference):
    ```
    REACT_APP_API_BASE=http://localhost:3001
    ```

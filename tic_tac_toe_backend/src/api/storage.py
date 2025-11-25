@@ -92,18 +92,30 @@ class _DbConfig:
 
 
 def _parse_database_url(url: str) -> _DbConfig:
-    """Parse a DATABASE_URL like sqlite:///./tictactoe.db and return config."""
-    # Support forms:
-    # - sqlite:///relative/path.db
-    # - sqlite:////absolute/path.db
-    # - sqlite://:memory:
+    """Parse a DATABASE_URL like sqlite:///./tictactoe.db and return config.
+
+    Supports:
+    - sqlite:///relative/path.db
+    - sqlite:////absolute/path.db
+    - sqlite://:memory:
+    - sqlite:///tictactoe.db (no leading ./)
+    """
     if not url:
         raise ValueError("DATABASE_URL is empty")
-    m = re.match(r"^(?P<driver>sqlite):///(?P<path>.*)$", url)
+    # Normalize and validate
+    url = url.strip()
+    # Accept :memory:
+    if url.startswith("sqlite://") and ":memory:" in url:
+        return _DbConfig(driver="sqlite", path=":memory:")
+    # Accept three or more slashes after scheme; capture the rest as path
+    m = re.match(r"^(?P<driver>sqlite):///{1,}(?P<path>.*)$", url)
     if not m:
         raise ValueError(f"Unsupported DATABASE_URL format: {url}")
     driver = m.group("driver")
     path = m.group("path")
+    # If empty path, default to local file
+    if not path:
+        path = "./tictactoe.db"
     return _DbConfig(driver=driver, path=path)
 
 

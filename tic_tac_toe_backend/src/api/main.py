@@ -207,12 +207,21 @@ def start_game() -> CreateGameResponse:
     # Generate a game id here in the API layer for consistent behavior across adapters
     game_id = str(uuid4())
     rec = storage.create_game(game_id=game_id, created_at=datetime.utcnow())
+    # Ensure timestamps are JSON-serializable (datetime -> ISO strings handled by Pydantic, but be explicit for safety)
+    def _move_to_dict(m: Move) -> Dict:
+        if hasattr(m, "model_dump"):
+            d = m.model_dump()
+            if isinstance(d.get("timestamp"), datetime):
+                d["timestamp"] = d["timestamp"].isoformat()
+            return d
+        return {"index": m.index, "player": m.player, "timestamp": m.timestamp.isoformat() if isinstance(m.timestamp, datetime) else m.timestamp}
+
     state = GameState(
         board=rec.board,
         current_player=rec.current_player,
         winner=rec.winner,
         is_draw=rec.is_draw,
-        history=rec.history,
+        history=[_move_to_dict(m) for m in rec.history],
     )
     return CreateGameResponse(game_id=rec.game_id, state=state)
 
@@ -246,12 +255,20 @@ def make_move(
     rec = apply_move(rec, payload.index, payload.player)
     storage.save_game(rec)
 
+    def _move_to_dict(m: Move) -> Dict:
+        if hasattr(m, "model_dump"):
+            d = m.model_dump()
+            if isinstance(d.get("timestamp"), datetime):
+                d["timestamp"] = d["timestamp"].isoformat()
+            return d
+        return {"index": m.index, "player": m.player, "timestamp": m.timestamp.isoformat() if isinstance(m.timestamp, datetime) else m.timestamp}
+
     state = GameState(
         board=rec.board,
         current_player=rec.current_player,
         winner=rec.winner,
         is_draw=rec.is_draw,
-        history=rec.history,
+        history=[_move_to_dict(m) for m in rec.history],
     )
     return MakeMoveResponse(game_id=rec.game_id, state=state)
 
@@ -283,7 +300,7 @@ def get_game(game_id: str = Path(..., description="The game identifier")) -> Get
         current_player=rec.current_player,
         winner=rec.winner,
         is_draw=rec.is_draw,
-        history=rec.history,
+        history=[m.model_dump() if hasattr(m, "model_dump") else {"index": m.index, "player": m.player, "timestamp": m.timestamp} for m in rec.history],
     )
     return GetGameResponse(game_id=rec.game_id, state=state)
 

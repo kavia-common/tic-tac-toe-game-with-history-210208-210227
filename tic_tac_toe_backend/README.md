@@ -34,6 +34,10 @@ uvicorn src.api.main:app --reload --port ${PORT:-3001}
 
 - The frontend expects the backend on http://localhost:3001 by default (see frontend `.env` REACT_APP_API_BASE).
 - Ensure CORS_ORIGINS includes your frontend origin(s): `http://localhost:3000,http://127.0.0.1:3000`.
+- In hosted/preview environments, update:
+  - Backend `.env` CORS_ORIGINS to include the preview frontend URL (e.g., `https://<host>:3000`).
+  - Frontend `.env` REACT_APP_API_BASE to the preview backend URL (e.g., `https://<host>:3001`).
+  These must match to avoid 502/failed preflight issues from the gateway.
 
 ## Configuration (.env)
 
