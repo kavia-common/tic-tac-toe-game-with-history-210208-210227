@@ -3,6 +3,7 @@ def assert_board_shape(board):
     assert len(board) == 9
     assert all(v in (None, "X", "O") for v in board)
 
+
 def test_start_game_returns_initial_state(test_app):
     r = test_app.post("/games/start")
     assert r.status_code == 200
@@ -12,6 +13,7 @@ def test_start_game_returns_initial_state(test_app):
     assert data["currentPlayer"] in ("X", "O")
     assert data["status"] == "in_progress"
     assert data.get("winner") is None
+
 
 def test_make_move_updates_board_and_turn(test_app):
     # Start
@@ -33,6 +35,7 @@ def test_make_move_updates_board_and_turn(test_app):
     assert d2["board"][1] == "O"
     assert d2["currentPlayer"] == "X"
 
+
 def test_invalid_move_cell_occupied_returns_400(test_app):
     s = test_app.post("/games/start").json()
     gid = s["gameId"]
@@ -40,6 +43,7 @@ def test_invalid_move_cell_occupied_returns_400(test_app):
     r = test_app.post(f"/games/{gid}/move", json={"position": 0})
     assert r.status_code == 400
     assert "occupied" in r.json()["detail"].lower()
+
 
 def test_invalid_move_game_over_returns_400(test_app):
     s = test_app.post("/games/start").json()
@@ -54,6 +58,7 @@ def test_invalid_move_game_over_returns_400(test_app):
     assert r.status_code == 400
     assert "finished" in r.json()["detail"].lower()
 
+
 def test_get_game_state_with_moves_and_status(test_app):
     s = test_app.post("/games/start").json()
     gid = s["gameId"]
@@ -66,6 +71,7 @@ def test_get_game_state_with_moves_and_status(test_app):
     assert len(data["moves"]) == 2
     assert data["status"] in ("in_progress", "won", "draw")
     assert data["currentPlayer"] in ("X", "O", None)
+
 
 def test_detect_win_and_persisted_history(test_app):
     s = test_app.post("/games/start").json()
@@ -82,14 +88,18 @@ def test_detect_win_and_persisted_history(test_app):
     h = rh.json()
     assert "items" in h
     items = h["items"]
-    assert any(it["gameId"] == gid and it["status"] == "won" and it["winner"] == "X" for it in items)
+    assert any(
+        it["gameId"] == gid and it["status"] == "won" and it["winner"] == "X"
+        for it in items
+    )
+
 
 def test_detect_draw_and_persisted(test_app):
     s = test_app.post("/games/start").json()
     gid = s["gameId"]
     # Draw sequence:
     # X:0 O:1 X:2 O:4 X:3 O:5 X:7 O:6 X:8
-    seq = [0,1,2,4,3,5,7,6,8]
+    seq = [0, 1, 2, 4, 3, 5, 7, 6, 8]
     for p in seq:
         r = test_app.post(f"/games/{gid}/move", json={"position": p})
         assert r.status_code == 200

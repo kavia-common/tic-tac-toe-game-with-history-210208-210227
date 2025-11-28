@@ -6,6 +6,7 @@ import importlib
 import pytest
 from fastapi.testclient import TestClient
 
+
 # Ensure we import app after setting DB_PATH so startup uses temp db
 @contextlib.contextmanager
 def _temp_db_env():
@@ -38,6 +39,7 @@ def test_app(temp_db_path):
     from src.api import main as main_module
     importlib.reload(main_module)
     app = main_module.app
-    client = TestClient(app)
-    yield client
-    client.close()
+    # Use TestClient as a context manager so FastAPI startup and shutdown events run,
+    # ensuring init_db() is executed with the temporary DB path.
+    with TestClient(app) as client:
+        yield client

@@ -93,6 +93,7 @@ def health_check():
     """Simple health check endpoint."""
     return {"message": "Healthy"}
 
+
 # PUBLIC_INTERFACE
 @app.get(
     "/games/start/health",

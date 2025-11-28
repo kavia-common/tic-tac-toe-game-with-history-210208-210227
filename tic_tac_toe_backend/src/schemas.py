@@ -13,7 +13,12 @@ GameStatus = Literal["in_progress", "won", "draw"]
 class StartGameResponse(BaseModel):
     """Response model for starting a new game."""
     gameId: str = Field(..., description="Unique game identifier")
-    board: List[Cell] = Field(..., min_length=9, max_length=9, description="Board as 9-length list with 'X', 'O' or null")
+    board: List[Cell] = Field(
+        ...,
+        min_length=9,
+        max_length=9,
+        description="Board as 9-length list with 'X', 'O' or null",
+    )
     currentPlayer: Player = Field(..., description="Which player moves next")
     status: GameStatus = Field(..., description="Game status: in_progress | won | draw")
     winner: Optional[Player] = Field(None, description="Winner player when status is 'won'")

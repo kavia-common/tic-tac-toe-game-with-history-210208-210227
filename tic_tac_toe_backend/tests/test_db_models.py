@@ -1,6 +1,7 @@
 import importlib
 from src.db import init_db
 
+
 def test_create_and_list_games_isolated_db(temp_db_path):
     # Import models fresh (ensures using temp DB env)
     from src import models
@@ -15,6 +16,7 @@ def test_create_and_list_games_isolated_db(temp_db_path):
 
     games = models.list_games()
     assert any(x["id"] == "g1" for x in games)
+
 
 def test_add_move_and_get_game(temp_db_path):
     from src import models
@@ -33,6 +35,7 @@ def test_add_move_and_get_game(temp_db_path):
     assert len(game["moves"]) == 2
     assert game["moves"][0]["player"] == "X"
     assert game["moves"][1]["player"] == "O"
+
 
 def test_finalize_game_updates_rows(temp_db_path):
     from src import models

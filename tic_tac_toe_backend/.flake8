@@ -1,7 +1,20 @@
 [flake8]
-exclude = .git,__pycache__,build,dist,venv
-select = E9,F
-max-line-length = 120
+# Only lint our source and tests; ignore third-party and build artifacts
+exclude =
+    .venv,
+    venv,
+    env,
+    build,
+    dist,
+    __pycache__,
+    .pytest_cache,
+    .mypy_cache,
+    node_modules,
+    .git
+
+# Reasonable line length
+max-line-length = 100
+
+# Per-file ignores for special cases
 per-file-ignores =
-    __init__.py:F401
-max-complexity = 18
+    src/api/__init__.py:F401
