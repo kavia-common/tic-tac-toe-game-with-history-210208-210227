@@ -3,6 +3,7 @@ import sys
 import tempfile
 import contextlib
 from pathlib import Path
+from typing import List
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,6 +67,23 @@ def temp_db_path():
         yield p
 
 
+def _debug_routes(app) -> List[str]:
+    """
+    Helper to print and return route paths and openapi paths for diagnostics.
+    """
+    try:
+        route_paths = [getattr(r, "path", None) for r in app.router.routes]
+    except Exception:
+        route_paths = []
+    try:
+        openapi_paths = list(app.openapi().get("paths", {}).keys())
+    except Exception:
+        openapi_paths = []
+    print("Registered routes:", route_paths)
+    print("OpenAPI paths:", openapi_paths)
+    return route_paths
+
+
 @pytest.fixture
 def test_app(temp_db_path):
     """
@@ -76,33 +94,35 @@ def test_app(temp_db_path):
     - Set DB_PATH to temp file.
     - Explicitly call init_db() after setting DB_PATH to eliminate timing gaps.
     - Use TestClient as a context manager so FastAPI startup events still run.
+    - Assert the /games/history route is present in both router and OpenAPI.
     """
     _prepend_src_to_syspath()
 
     # Import after env is set
     from src.db import init_db
-    from src.api import main as main_module
+    from src.api.main import app  # Import the concrete app instance directly
 
     # Explicit DB init just before client usage to avoid any race/timing gap
     init_db()
 
-    # Use the app instance directly to avoid stale references from reloads
-    app = main_module.app
-
-    # Debug: ensure route is registered and OpenAPI contains /games/history
-    try:
-        route_paths = [getattr(r, "path", None) for r in app.router.routes]
-        # print to stdout so it appears in pytest -q output if failures occur
-        print("Registered routes:", route_paths)
-        openapi_paths = list(app.openapi().get("paths", {}).keys())
-        print("OpenAPI paths:", openapi_paths)
-        assert "/games/history" in openapi_paths, "Expected /games/history in OpenAPI paths"
-        assert "/games/history" in route_paths, "Expected /games/history in router routes"
-    except Exception as e:
-        # Surface helpful context if assertion fails
-        print("Route registration debug failed:", repr(e))
-        raise
+    # Diagnostics and assertions before client context
+    route_paths = _debug_routes(app)
+    openapi_paths = list(app.openapi().get("paths", {}).keys())
+    assert "/games/history" in openapi_paths, "Expected /games/history in OpenAPI paths"
+    # Router stores parameterized routes separately; ensure exact match exists
+    assert "/games/history" in route_paths, (
+        "Expected /games/history in router routes. "
+        f"Found: {route_paths}"
+    )
 
     # Use TestClient as a context manager so startup/shutdown events run
     with TestClient(app) as client:
+        # Verify endpoint responds 200 even when no games exist
+        resp = client.get("/games/history")
+        print("GET /games/history status during fixture:", resp.status_code, "body:", resp.text)
+        assert resp.status_code == 200, "Expected /games/history to respond 200"
+        data = resp.json()
+        assert "items" in data and isinstance(data["items"], list), (
+            "Expected GameHistoryResponse with 'items' list"
+        )
         yield client
