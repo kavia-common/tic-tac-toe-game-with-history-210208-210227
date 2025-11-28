@@ -1,5 +1,3 @@
-import json
-
 def assert_board_shape(board):
     assert isinstance(board, list)
     assert len(board) == 9

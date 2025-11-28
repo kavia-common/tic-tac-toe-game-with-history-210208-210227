@@ -1,6 +1,5 @@
-import os
 import importlib
-from src.db import db_session, init_db
+from src.db import init_db
 
 def test_create_and_list_games_isolated_db(temp_db_path):
     # Import models fresh (ensures using temp DB env)
@@ -28,7 +27,7 @@ def test_add_move_and_get_game(temp_db_path):
     assert m1["player"] == "X"
     assert m1["position"] == 0
 
-    m2 = models.add_move("g2", 2, "O", 4)
+    models.add_move("g2", 2, "O", 4)
     game = models.get_game("g2")
     assert game is not None
     assert len(game["moves"]) == 2

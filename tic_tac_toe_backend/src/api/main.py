@@ -5,6 +5,7 @@ import os
 
 from fastapi import FastAPI, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from src.db import init_db
 from src.models import create_game, add_move, finalize_game, get_game, list_games
@@ -34,23 +35,47 @@ app = FastAPI(
     ],
 )
 
+logger = logging.getLogger("tic_tac_toe_backend")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
 # Configure CORS from environment with sensible defaults for local/preview
-_default_origins = [
+_default_origins = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # preview URLs
-    "https://vscode-internal-20447-beta.beta01.cloud.kavia.ai:3000",
-    "https://vscode-internal-20447-beta.beta01.cloud.kavia.ai:3001",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}
+# Include backend host itself to allow same-origin during docs testing
+_backend_host = os.getenv("BACKEND_ORIGIN")
+if _backend_host:
+    _default_origins.add(_backend_host)
+
+# Accept front-end URL from envs that might be set by the hosting environment
+frontend_envs = [
+    "FRONTEND_URL",
+    "REACT_APP_FRONTEND_URL",
+    "SITE_URL",
 ]
+for env_key in frontend_envs:
+    val = os.getenv(env_key)
+    if val:
+        _default_origins.add(val.strip())
+
+# Optionally accept explicit comma-separated list
 cors_env = os.getenv("CORS_ORIGINS")
+allow_origins = set()
 if cors_env:
-    allow_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
-else:
+    allow_origins.update({o.strip() for o in cors_env.split(",") if o.strip()})
+
+# Fallback to defaults when none provided
+if not allow_origins:
     allow_origins = _default_origins
+
+logger.info(f"Configured CORS allow_origins: {sorted(allow_origins)}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
+    allow_origins=sorted(allow_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,6 +93,17 @@ def health_check():
     """Simple health check endpoint."""
     return {"message": "Healthy"}
 
+# PUBLIC_INTERFACE
+@app.get(
+    "/games/start/health",
+    tags=["games"],
+    summary="Start endpoint health",
+    description="Lightweight reachability check for the /games/start route.",
+)
+def start_game_health():
+    """Return a simple OK to confirm that /games/start route is reachable."""
+    return {"ok": True}
+
 
 # PUBLIC_INTERFACE
 @app.post(
@@ -80,16 +116,19 @@ def health_check():
 def start_game() -> StartGameResponse:
     """Start a new game and return initial state with board, current player, and status."""
     game_id = str(uuid4())
+    logger.info("Starting new game: %s", game_id)
     create_game(game_id)
     board = empty_board()
     current_player = next_player_from_board(board)
-    return StartGameResponse(
+    resp = StartGameResponse(
         gameId=game_id,
         board=board,
         currentPlayer=current_player,
         status="in_progress",
         winner=None,
     )
+    logger.debug("StartGameResponse: %s", resp.model_dump())
+    return resp
 
 
 def _build_board_from_moves(moves: List[dict]) -> List[Optional[str]]:
