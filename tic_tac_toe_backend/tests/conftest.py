@@ -8,13 +8,18 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+# Prepend absolute src path immediately upon module import to affect collection
+_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_src_path = os.path.join(_root, "src")
+if _src_path not in sys.path:
+    sys.path.insert(0, _src_path)
+
 
 def _prepend_src_to_syspath():
     """
     Prepend absolute backend src path to sys.path so 'from src...' imports
     work regardless of pytest's pythonpath handling.
     """
-    # Resolve: <repo_root>/tic-tac-toe-game-with-history-210208-210227/tic_tac_toe_backend/src
     this_file = Path(__file__).resolve()
     backend_root = this_file.parents[1]
     src_path = (backend_root / "src").resolve()
@@ -70,18 +75,19 @@ def test_app(temp_db_path):
     Steps:
     - Ensure sys.path includes absolute src path.
     - Set DB_PATH to temp file.
-    - Explicitly call init_db() to eliminate timing gaps.
+    - Explicitly call init_db() after setting DB_PATH to eliminate timing gaps.
     - Use TestClient as a context manager so FastAPI startup events still run.
     """
     _prepend_src_to_syspath()
 
     # Import after env is set; reload module to ensure fresh startup hooks run per test
-    from src.api import main as main_module
     from src.db import init_db
+    from src.api import main as main_module
 
     # Explicit DB init just before client usage to avoid any race/timing gap
     init_db()
 
+    # Reload main module so startup events see the current environment if needed
     importlib.reload(main_module)
     app = main_module.app
 
