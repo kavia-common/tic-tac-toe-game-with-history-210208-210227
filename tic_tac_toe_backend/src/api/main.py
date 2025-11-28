@@ -146,6 +146,40 @@ def _build_board_from_moves(moves: List[dict]) -> List[Optional[str]]:
 
 
 # PUBLIC_INTERFACE
+@app.get(
+    "/games/history",
+    response_model=GameHistoryResponse,
+    tags=["games"],
+    summary="List game history",
+    description="List recent games with status and winner.",
+)
+def games_history() -> GameHistoryResponse:
+    """List recent games with summarized status and winner."""
+    games = list_games(limit=50, offset=0)
+    items: List[HistoryItem] = []
+    for g in games:
+        # Determine status from result/finished_at
+        if g["result"] == "draw":
+            status = "draw"
+            winner = None
+        elif g["result"] in ("X", "O"):
+            status = "won"
+            winner = g["result"]
+        else:
+            status = "in_progress"
+            winner = None
+        items.append(
+            HistoryItem(
+                gameId=g["id"],
+                status=status,  # type: ignore[arg-type]
+                winner=winner,  # type: ignore[arg-type]
+                finishedAt=g["finished_at"],
+            )
+        )
+    return GameHistoryResponse(items=items)
+
+
+# PUBLIC_INTERFACE
 @app.post(
     "/games/{gameId}/move",
     response_model=MoveResponse,
@@ -254,37 +288,3 @@ def get_game_state(
         winner=winner,
         moves=move_records,  # type: ignore[arg-type]
     )
-
-
-# PUBLIC_INTERFACE
-@app.get(
-    "/games/history",
-    response_model=GameHistoryResponse,
-    tags=["games"],
-    summary="List game history",
-    description="List recent games with status and winner.",
-)
-def games_history() -> GameHistoryResponse:
-    """List recent games with summarized status and winner."""
-    games = list_games(limit=50, offset=0)
-    items: List[HistoryItem] = []
-    for g in games:
-        # Determine status from result/finished_at
-        if g["result"] == "draw":
-            status = "draw"
-            winner = None
-        elif g["result"] in ("X", "O"):
-            status = "won"
-            winner = g["result"]
-        else:
-            status = "in_progress"
-            winner = None
-        items.append(
-            HistoryItem(
-                gameId=g["id"],
-                status=status,  # type: ignore[arg-type]
-                winner=winner,  # type: ignore[arg-type]
-                finishedAt=g["finished_at"],
-            )
-        )
-    return GameHistoryResponse(items=items)
