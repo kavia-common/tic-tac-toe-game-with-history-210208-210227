@@ -2,7 +2,6 @@ import os
 import sys
 import tempfile
 import contextlib
-import importlib
 from pathlib import Path
 
 import pytest
@@ -80,16 +79,29 @@ def test_app(temp_db_path):
     """
     _prepend_src_to_syspath()
 
-    # Import after env is set; reload module to ensure fresh startup hooks run per test
+    # Import after env is set
     from src.db import init_db
     from src.api import main as main_module
 
     # Explicit DB init just before client usage to avoid any race/timing gap
     init_db()
 
-    # Reload main module so startup events see the current environment if needed
-    importlib.reload(main_module)
+    # Use the app instance directly to avoid stale references from reloads
     app = main_module.app
+
+    # Debug: ensure route is registered and OpenAPI contains /games/history
+    try:
+        route_paths = [getattr(r, "path", None) for r in app.router.routes]
+        # print to stdout so it appears in pytest -q output if failures occur
+        print("Registered routes:", route_paths)
+        openapi_paths = list(app.openapi().get("paths", {}).keys())
+        print("OpenAPI paths:", openapi_paths)
+        assert "/games/history" in openapi_paths, "Expected /games/history in OpenAPI paths"
+        assert "/games/history" in route_paths, "Expected /games/history in router routes"
+    except Exception as e:
+        # Surface helpful context if assertion fails
+        print("Route registration debug failed:", repr(e))
+        raise
 
     # Use TestClient as a context manager so startup/shutdown events run
     with TestClient(app) as client:
