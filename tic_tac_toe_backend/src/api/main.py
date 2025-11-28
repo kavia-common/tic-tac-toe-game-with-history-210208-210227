@@ -36,7 +36,10 @@ app = FastAPI(
 )
 
 logger = logging.getLogger("tic_tac_toe_backend")
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+# Normalize LOG_LEVEL to handle lowercase or invalid values safely
+_loglevel_raw = str(os.getenv("LOG_LEVEL", "INFO")).upper()
+_loglevel = getattr(logging, _loglevel_raw, logging.INFO)
+logging.basicConfig(level=_loglevel)
 
 # Configure CORS from environment with sensible defaults for local/preview
 _default_origins = {
