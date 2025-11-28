@@ -3,7 +3,16 @@ import os
 
 from src.api.main import app
 
-# Get the OpenAPI schema
+"""
+Utility to regenerate the OpenAPI spec for the backend.
+
+Run with:
+    python -m src.api.generate_openapi
+
+The output is written to interfaces/openapi.json
+"""
+
+# Get the OpenAPI schema from the running app definition
 openapi_schema = app.openapi()
 
 # Write to file

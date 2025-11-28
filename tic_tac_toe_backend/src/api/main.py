@@ -1,6 +1,7 @@
 from typing import List, Optional
 from uuid import uuid4
 import json
+import os
 
 from fastapi import FastAPI, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,9 +34,23 @@ app = FastAPI(
     ],
 )
 
+# Configure CORS from environment with sensible defaults for local/preview
+_default_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # preview URLs
+    "https://vscode-internal-20447-beta.beta01.cloud.kavia.ai:3000",
+    "https://vscode-internal-20447-beta.beta01.cloud.kavia.ai:3001",
+]
+cors_env = os.getenv("CORS_ORIGINS")
+if cors_env:
+    allow_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+else:
+    allow_origins = _default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
